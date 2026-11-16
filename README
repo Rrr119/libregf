@@ -1,5 +1,9 @@
 libregf is a library to access the Windows NT Registry File (REGF) format.
 
+Library and tool support is included for applying DIRT and HvLE transaction
+logs (.LOG1 and .LOG2) to dirty hives. Use regfrecover to write the recovered
+hive to a new file, for example: regfrecover -o SYSTEM.recovered SYSTEM
+
 Project information:
 
 * Status: alpha

@@ -70,4 +70,4 @@ m4_define([AT_SETUP],
     ])
   )
 
-LINT_MANPAGES([libregf.3 regfexport.1 regfinfo.1 regfmount.1])
+LINT_MANPAGES([libregf.3 regfexport.1 regfinfo.1 regfmount.1 regfrecover.1])

@@ -21,7 +21,8 @@ AM_LDFLAGS = @STATIC_LDFLAGS@
 bin_PROGRAMS = \
 	regfexport \
 	regfinfo \
-	regfmount
+	regfmount \
+	regfrecover
 
 regfexport_SOURCES = \
 	export_handle.c export_handle.h \
@@ -112,6 +113,24 @@ regfmount_LDADD = \
 	@LIBCERROR_LIBADD@ \
 	@LIBINTL@
 
+regfrecover_SOURCES = \
+	regfrecover.c \
+	regftools_getopt.c regftools_getopt.h \
+	regftools_i18n.h \
+	regftools_libcerror.h \
+	regftools_libclocale.h \
+	regftools_libcnotify.h \
+	regftools_libregf.h \
+	regftools_output.c regftools_output.h \
+	regftools_unused.h
+
+regfrecover_LDADD = \
+	@LIBCNOTIFY_LIBADD@ \
+	@LIBCLOCALE_LIBADD@ \
+	../libregf/libregf.la \
+	@LIBCERROR_LIBADD@ \
+	@LIBINTL@
+
 CLEANFILES = \
 	*.exe
 
@@ -126,4 +145,6 @@ splint-local:
 	-splint -preproc -redef $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(regfinfo_SOURCES)
 	@echo "Running splint on regfmount ..."
 	-splint -preproc -redef $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(regfmount_SOURCES)
+	@echo "Running splint on regfrecover ..."
+	-splint -preproc -redef $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(regfrecover_SOURCES)
 

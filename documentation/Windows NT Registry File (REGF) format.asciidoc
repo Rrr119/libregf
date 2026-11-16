@@ -1107,6 +1107,33 @@ the corresponding hive file.
 In some transaction files the dirty vector is 512 bytes and no bit in the dirty
 page bitmap is set.
 
+=== Transaction log recovery
+
+libregf supports both the old `DIRT` transaction log format and the new `HvLE`
+transaction log format introduced in Windows 8.1.
+
+The following recovery rules are applied:
+
+* A primary hive requires recovery when its *Primary sequence number* and
+*Secondary sequence number* differ, or when its base block checksum is invalid.
+* Each transaction log base block checksum is verified before its dirty pages
+are used.
+* `HvLE` log entries are verified using *Hash-1* and *Hash-2*, which are
+Marvin32 hashes seeded with `82 EF 4D 88 7A 4E 55 C5`.
+* Log entries are applied only while their sequence numbers are continuous.
+Recovery stops at the first missing, stale, or invalid entry.
+* The recovered base block gets synchronized sequence numbers, the hive bins
+data size of the last applied entry, a primary file type, and a recalculated
+XOR-32 checksum.
+* The primary hive is grown when a log entry declares a larger hive bins data
+size. Page references that fall outside the declared bounds are rejected.
+
+When `libregf_file_open()` is used, libregf looks for `<filename>.LOG1` and
+`<filename>.LOG2` next to the primary hive. Transaction logs are only applied
+when the primary hive is dirty. The recovered hive is kept in memory and can be
+written with `libregf_file_write()`. The `regfrecover` tool exposes the same
+functionality from the command line.
+
 == [[corruption_scenarios]]Corruption scenarios
 
 === Hive bin corruption scenarios

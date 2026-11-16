@@ -35,6 +35,7 @@
 #include "libregf_libcthreads.h"
 #include "libregf_libfcache.h"
 #include "libregf_libfdata.h"
+#include "libregf_transaction_log.h"
 #include "libregf_types.h"
 
 #if defined( __cplusplus )
@@ -65,6 +66,18 @@ struct libregf_internal_file
 	 */
 	libregf_hive_bins_list_t *hive_bins_list;
 
+	/* The recovered hive data
+	 */
+	uint8_t *recovered_data;
+
+	/* The recovered hive data size
+	 */
+	size_t recovered_data_size;
+
+	/* The last recovered sequence number
+	 */
+	uint32_t last_recovered_sequence_number;
+
 	/* Value to indicate if the file IO handle was created inside the library
 	 */
 	uint8_t file_io_handle_created_in_library;
@@ -76,6 +89,10 @@ struct libregf_internal_file
 	/* Value to indicate if abort was signalled
 	 */
 	int abort;
+
+	/* Value to indicate if transaction logs were recovered
+	 */
+	uint8_t is_recovered;
 
 #if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
 	/* The read/write lock
@@ -106,12 +123,30 @@ int libregf_file_open(
      int access_flags,
      libcerror_error_t **error );
 
+LIBREGF_EXTERN \
+int libregf_file_open_with_transaction_logs(
+     libregf_file_t *file,
+     const char *filename,
+     const char *transaction_log1_filename,
+     const char *transaction_log2_filename,
+     int access_flags,
+     libcerror_error_t **error );
+
 #if defined( HAVE_WIDE_CHARACTER_TYPE )
 
 LIBREGF_EXTERN \
 int libregf_file_open_wide(
      libregf_file_t *file,
      const wchar_t *filename,
+     int access_flags,
+     libcerror_error_t **error );
+
+LIBREGF_EXTERN \
+int libregf_file_open_wide_with_transaction_logs(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     const wchar_t *transaction_log1_filename,
+     const wchar_t *transaction_log2_filename,
      int access_flags,
      libcerror_error_t **error );
 
@@ -128,6 +163,28 @@ LIBREGF_EXTERN \
 int libregf_file_close(
      libregf_file_t *file,
      libcerror_error_t **error );
+
+LIBREGF_EXTERN \
+int libregf_file_is_recovered(
+     libregf_file_t *file,
+     int *is_recovered,
+     libcerror_error_t **error );
+
+LIBREGF_EXTERN \
+int libregf_file_write(
+     libregf_file_t *file,
+     const char *filename,
+     libcerror_error_t **error );
+
+#if defined( HAVE_WIDE_CHARACTER_TYPE )
+
+LIBREGF_EXTERN \
+int libregf_file_write_wide(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     libcerror_error_t **error );
+
+#endif /* defined( HAVE_WIDE_CHARACTER_TYPE ) */
 
 int libregf_internal_file_open_read(
      libregf_internal_file_t *internal_file,

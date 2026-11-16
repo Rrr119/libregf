@@ -60,6 +60,7 @@ libregf_la_SOURCES = \
 	libregf_security_key.c libregf_security_key.h \
 	libregf_sub_key_list.c libregf_sub_key_list.h \
 	libregf_support.c libregf_support.h \
+	libregf_transaction_log.c libregf_transaction_log.h \
 	libregf_types.h \
 	libregf_unused.h \
 	libregf_value.c libregf_value.h \

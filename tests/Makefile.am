@@ -58,6 +58,7 @@ check_PROGRAMS = \
 	regf_test_security_key \
 	regf_test_sub_key_list \
 	regf_test_support \
+	regf_test_transaction_log \
 	regf_test_tools_info_handle \
 	regf_test_tools_mount_path_string \
 	regf_test_tools_output \
@@ -419,6 +420,17 @@ regf_test_support_LDADD = \
 	@LIBCNOTIFY_LIBADD@ \
 	@LIBCLOCALE_LIBADD@ \
 	@LIBCDATA_LIBADD@ \
+	../libregf/libregf.la \
+	@LIBCERROR_LIBADD@
+
+regf_test_transaction_log_SOURCES = \
+	regf_test_transaction_log.c \
+	regf_test_libcerror.h \
+	regf_test_libregf.h \
+	regf_test_macros.h \
+	regf_test_unused.h
+
+regf_test_transaction_log_LDADD = \
 	../libregf/libregf.la \
 	@LIBCERROR_LIBADD@
 

@@ -132,6 +132,7 @@ stamp-h[1-9]
 /regftools/regfexport
 /regftools/regfinfo
 /regftools/regfmount
+/regftools/regfrecover
 /ossfuzz/*_fuzzer
 /tests/*.dir
 /tests/*.exe
@@ -164,6 +165,7 @@ stamp-h[1-9]
 /tests/regf_test_security_key
 /tests/regf_test_sub_key_list
 /tests/regf_test_support
+/tests/regf_test_transaction_log
 /tests/regf_test_tools_info_handle
 /tests/regf_test_tools_mount_path_string
 /tests/regf_test_tools_output

@@ -222,6 +222,19 @@ int libregf_file_open(
      int access_flags,
      libregf_error_t **error );
 
+/* Opens a file and applies transaction logs
+ * The transaction log filenames can be NULL
+ * Returns 1 if successful or -1 on error
+ */
+LIBREGF_EXTERN \
+int libregf_file_open_with_transaction_logs(
+     libregf_file_t *file,
+     const char *filename,
+     const char *transaction_log1_filename,
+     const char *transaction_log2_filename,
+     int access_flags,
+     libregf_error_t **error );
+
 #if defined( LIBREGF_HAVE_WIDE_CHARACTER_TYPE )
 
 /* Opens a file
@@ -231,6 +244,19 @@ LIBREGF_EXTERN \
 int libregf_file_open_wide(
      libregf_file_t *file,
      const wchar_t *filename,
+     int access_flags,
+     libregf_error_t **error );
+
+/* Opens a file and applies transaction logs
+ * The transaction log filenames can be NULL
+ * Returns 1 if successful or -1 on error
+ */
+LIBREGF_EXTERN \
+int libregf_file_open_wide_with_transaction_logs(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     const wchar_t *transaction_log1_filename,
+     const wchar_t *transaction_log2_filename,
      int access_flags,
      libregf_error_t **error );
 
@@ -257,6 +283,37 @@ LIBREGF_EXTERN \
 int libregf_file_close(
      libregf_file_t *file,
      libregf_error_t **error );
+
+/* Determines if the file was recovered using transaction logs
+ * Returns 1 if successful or -1 on error
+ */
+LIBREGF_EXTERN \
+int libregf_file_is_recovered(
+     libregf_file_t *file,
+     int *is_recovered,
+     libregf_error_t **error );
+
+/* Writes the recovered or original file data to a file
+ * Returns 1 if successful or -1 on error
+ */
+LIBREGF_EXTERN \
+int libregf_file_write(
+     libregf_file_t *file,
+     const char *filename,
+     libregf_error_t **error );
+
+#if defined( LIBREGF_HAVE_WIDE_CHARACTER_TYPE )
+
+/* Writes the recovered or original file data to a file
+ * Returns 1 if successful or -1 on error
+ */
+LIBREGF_EXTERN \
+int libregf_file_write_wide(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     libregf_error_t **error );
+
+#endif /* defined( LIBREGF_HAVE_WIDE_CHARACTER_TYPE ) */
 
 /* Determine if the file is corrupted
  * Returns 1 if corrupted, 0 if not or -1 on error

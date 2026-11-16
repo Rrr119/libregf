@@ -159,8 +159,35 @@ File functions
 .fi
 .nf
 .Ft int
+.Fo libregf_file_open_with_transaction_logs
+.Fa "libregf_file_t *file"
+.Fa "const char *filename"
+.Fa "const char *transaction_log1_filename"
+.Fa "const char *transaction_log2_filename"
+.Fa "int access_flags"
+.Fa "libregf_error_t **error"
+.Fc
+.fi
+.nf
+.Ft int
 .Fo libregf_file_close
 .Fa "libregf_file_t *file"
+.Fa "libregf_error_t **error"
+.Fc
+.fi
+.nf
+.Ft int
+.Fo libregf_file_is_recovered
+.Fa "libregf_file_t *file"
+.Fa "int *is_recovered"
+.Fa "libregf_error_t **error"
+.Fc
+.fi
+.nf
+.Ft int
+.Fo libregf_file_write
+.Fa "libregf_file_t *file"
+.Fa "const char *filename"
 .Fa "libregf_error_t **error"
 .Fc
 .fi
@@ -240,6 +267,25 @@ Available when compiled with wide character string support:
 .Fa "libregf_file_t *file"
 .Fa "const wchar_t *filename"
 .Fa "int access_flags"
+.Fa "libregf_error_t **error"
+.Fc
+.fi
+.nf
+.Ft int
+.Fo libregf_file_open_wide_with_transaction_logs
+.Fa "libregf_file_t *file"
+.Fa "const wchar_t *filename"
+.Fa "const wchar_t *transaction_log1_filename"
+.Fa "const wchar_t *transaction_log2_filename"
+.Fa "int access_flags"
+.Fa "libregf_error_t **error"
+.Fc
+.fi
+.nf
+.Ft int
+.Fo libregf_file_write_wide
+.Fa "libregf_file_t *file"
+.Fa "const wchar_t *filename"
 .Fa "libregf_error_t **error"
 .Fc
 .fi

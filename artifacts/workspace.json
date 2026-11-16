@@ -1,0 +1,17 @@
+{
+  "root": "/home/dev/feedback/uid22477",
+  "B": "/home/dev/feedback/uid22477",
+  "sha": "0755d25366fa6cb2c4a44836d5b77b4f75f0c57e",
+  "wslDistro": "Ubuntu-26.04",
+  "source": {
+    "owner": "libyal",
+    "repo": "libregf",
+    "sha": "0755d25366fa6cb2c4a44836d5b77b4f75f0c57e"
+  },
+  "fork": {
+    "owner": "Rrr119",
+    "repo": "libregf",
+    "cloneUrl": "https://github.com/Rrr119/libregf.git"
+  },
+  "at": "2026-11-16T04:59:34.728Z"
+}

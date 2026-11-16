@@ -1,0 +1,77 @@
+.Dd November 16, 2026
+.Dt REGFRECOVER 1
+.Os
+.Sh NAME
+.Nm regfrecover
+.Nd applies transaction logs to a Windows NT Registry File (REGF)
+.Sh SYNOPSIS
+.Nm regfrecover
+.Fl o Ar output
+.Op Fl l Ar log1
+.Op Fl L Ar log2
+.Op Fl hvV
+.Ar source
+.Sh DESCRIPTION
+.Nm regfrecover
+applies transaction logs to a dirty Windows NT Registry File (REGF) and writes
+the recovered hive to a new file.
+.Pp
+If neither
+.Fl l
+nor
+.Fl L
+is specified the
+.Pa source.LOG1
+and
+.Pa source.LOG2
+files are used when they are present.
+Both the old DIRT and new HvLE transaction log formats are supported.
+.Pp
+The recovered hive has synchronized sequence numbers, an updated hive bins data
+size, and a recalculated base block checksum.
+.Pp
+.Ar source
+is the source file.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl h
+shows this help
+.It Fl l Ar log1
+the first transaction log
+.It Fl L Ar log2
+the second transaction log
+.It Fl o Ar output
+the output file
+.It Fl v
+verbose output to stderr
+.It Fl V
+print version
+.El
+.Sh ENVIRONMENT
+None
+.Sh FILES
+None
+.Sh EXAMPLES
+.Bd -literal
+# regfrecover -o SYSTEM.recovered SYSTEM
+.Ed
+.Sh DIAGNOSTICS
+Errors, verbose and debug output are printed to stderr when verbose output
+\-v is enabled.
+.Sh SEE ALSO
+.Xr regfexport 1 ,
+.Xr regfinfo 1 ,
+.Xr regfmount 1
+.Sh AUTHORS
+.An Joachim Metz <joachim.metz@gmail.com>
+.Sh BUGS
+Please report bugs of any kind on the project issue tracker: \
+https://github.com/libyal/libregf/issues
+.Sh COPYRIGHT
+Copyright (C) 2009-2026, Joachim Metz <joachim.metz@gmail.com>.
+.sp
+This is free software; see the source for copying conditions.
+There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A \
+PARTICULAR PURPOSE.
+

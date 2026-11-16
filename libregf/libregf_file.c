@@ -42,6 +42,7 @@
 #include "libregf_libfcache.h"
 #include "libregf_libfdata.h"
 #include "libregf_libuna.h"
+#include "libregf_transaction_log.h"
 
 /* Creates a file
  * Make sure the value file is referencing, is set to NULL
@@ -257,69 +258,32 @@ int libregf_file_signal_abort(
 	return( 1 );
 }
 
-/* Opens a file
+/* Creates a file IO handle for a filename
  * Returns 1 if successful or -1 on error
  */
-int libregf_file_open(
-     libregf_file_t *file,
+int libregf_file_initialize_file_io_handle(
+     libbfio_handle_t **file_io_handle,
      const char *filename,
-     int access_flags,
      libcerror_error_t **error )
 {
-	libbfio_handle_t *file_io_handle       = NULL;
-	libregf_internal_file_t *internal_file = NULL;
-	static char *function                  = "libregf_file_open";
-	size_t filename_length                 = 0;
+	static char *function = "libregf_file_initialize_file_io_handle";
+	size_t filename_length = 0;
 
-	if( file == NULL )
+	if( ( file_io_handle == NULL )
+	 || ( *file_io_handle != NULL )
+	 || ( filename == NULL ) )
 	{
 		libcerror_error_set(
 		 error,
 		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
 		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
-		 "%s: invalid file.",
+		 "%s: invalid argument.",
 		 function );
 
 		return( -1 );
 	}
-	if( filename == NULL )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
-		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
-		 "%s: invalid filename.",
-		 function );
-
-		return( -1 );
-	}
-	if( ( ( access_flags & LIBREGF_ACCESS_FLAG_READ ) == 0 )
-	 && ( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) == 0 ) )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
-		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
-		 "%s: unsupported access flags.",
-		 function );
-
-		return( -1 );
-	}
-	if( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) != 0 )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
-		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
-		 "%s: write access currently not supported.",
-		 function );
-
-		return( -1 );
-	}
-	internal_file = (libregf_internal_file_t *) file;
-
 	if( libbfio_file_initialize(
-	     &file_io_handle,
+	     file_io_handle,
 	     error ) != 1 )
 	{
 		libcerror_error_set(
@@ -329,11 +293,11 @@ int libregf_file_open(
 		 "%s: unable to create file IO handle.",
 		 function );
 
-		goto on_error;
+		return( -1 );
 	}
 #if defined( HAVE_DEBUG_OUTPUT )
 	if( libbfio_handle_set_track_offsets_read(
-	     file_io_handle,
+	     *file_io_handle,
 	     1,
 	     error ) != 1 )
 	{
@@ -351,7 +315,7 @@ int libregf_file_open(
 	                   filename );
 
 	if( libbfio_file_set_name(
-	     file_io_handle,
+	     *file_io_handle,
 	     filename,
 	     filename_length + 1,
 	     error ) != 1 )
@@ -365,6 +329,148 @@ int libregf_file_open(
 
 		goto on_error;
 	}
+	return( 1 );
+
+on_error:
+	libbfio_handle_free(
+	 file_io_handle,
+	 NULL );
+
+	return( -1 );
+}
+
+/* Opens a file after applying transaction logs
+ * The file IO handles remain owned by the caller
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_open_with_transaction_log_file_io_handles(
+     libregf_file_t *file,
+     libbfio_handle_t *file_io_handle,
+     libbfio_handle_t *transaction_log1_file_io_handle,
+     libbfio_handle_t *transaction_log2_file_io_handle,
+     int access_flags,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *recovered_file_io_handle = NULL;
+	libregf_internal_file_t *internal_file     = NULL;
+	static char *function                      = "libregf_file_open_with_transaction_log_file_io_handles";
+	uint8_t *recovered_data                    = NULL;
+	size_t recovered_data_size                 = 0;
+	uint32_t last_sequence_number              = 0;
+	int number_of_recovered_pages              = 0;
+	int result                                 = 0;
+
+	if( ( file == NULL )
+	 || ( file_io_handle == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( ( ( access_flags & LIBREGF_ACCESS_FLAG_READ ) == 0 )
+	 && ( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) == 0 ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
+		 "%s: unsupported access flags.",
+		 function );
+
+		return( -1 );
+	}
+	if( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) != 0 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
+		 "%s: write access currently not supported.",
+		 function );
+
+		return( -1 );
+	}
+	internal_file = (libregf_internal_file_t *) file;
+
+	result = libregf_transaction_log_recover_file_io_handles(
+	          file_io_handle,
+	          transaction_log1_file_io_handle,
+	          transaction_log2_file_io_handle,
+	          &recovered_data,
+	          &recovered_data_size,
+	          &last_sequence_number,
+	          &number_of_recovered_pages,
+	          error );
+
+	if( result == -1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_READ_FAILED,
+		 "%s: unable to recover transaction logs.",
+		 function );
+
+		goto on_error;
+	}
+	if( result == 1 )
+	{
+		if( libbfio_memory_range_initialize(
+		     &recovered_file_io_handle,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+			 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+			 "%s: unable to create recovered file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		if( libbfio_memory_range_set(
+		     recovered_file_io_handle,
+		     recovered_data,
+		     recovered_data_size,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+			 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
+			 "%s: unable to set recovered data in file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		if( libregf_file_open_file_io_handle(
+		     file,
+		     recovered_file_io_handle,
+		     access_flags,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to open recovered file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		internal_file->recovered_data                 = recovered_data;
+		internal_file->recovered_data_size            = recovered_data_size;
+		internal_file->last_recovered_sequence_number = last_sequence_number;
+		internal_file->is_recovered                   = 1;
+		internal_file->file_io_handle_created_in_library = 1;
+
+		return( 1 );
+	}
 	if( libregf_file_open_file_io_handle(
 	     file,
 	     file_io_handle,
@@ -375,73 +481,48 @@ int libregf_file_open(
 		 error,
 		 LIBCERROR_ERROR_DOMAIN_IO,
 		 LIBCERROR_IO_ERROR_OPEN_FAILED,
-		 "%s: unable to open file: %s.",
-		 function,
-		 filename );
-
-		goto on_error;
-	}
-#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
-	if( libcthreads_read_write_lock_grab_for_write(
-	     internal_file->read_write_lock,
-	     error ) != 1 )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to grab read/write lock for writing.",
+		 "%s: unable to open file IO handle.",
 		 function );
 
 		goto on_error;
 	}
-#endif
 	internal_file->file_io_handle_created_in_library = 1;
 
-#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
-	if( libcthreads_read_write_lock_release_for_write(
-	     internal_file->read_write_lock,
-	     error ) != 1 )
-	{
-		libcerror_error_set(
-		 error,
-		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to release read/write lock for writing.",
-		 function );
-
-		internal_file->file_io_handle_created_in_library = 0;
-
-		goto on_error;
-	}
-#endif
 	return( 1 );
 
 on_error:
-	if( file_io_handle != NULL )
+	if( recovered_file_io_handle != NULL )
 	{
 		libbfio_handle_free(
-		 &file_io_handle,
+		 &recovered_file_io_handle,
 		 NULL );
+	}
+	if( recovered_data != NULL )
+	{
+		memory_free(
+		 recovered_data );
 	}
 	return( -1 );
 }
 
-#if defined( HAVE_WIDE_CHARACTER_TYPE )
-
 /* Opens a file
  * Returns 1 if successful or -1 on error
  */
-int libregf_file_open_wide(
+int libregf_file_open(
      libregf_file_t *file,
-     const wchar_t *filename,
+     const char *filename,
      int access_flags,
      libcerror_error_t **error )
 {
-	libbfio_handle_t *file_io_handle       = NULL;
-	libregf_internal_file_t *internal_file = NULL;
-	static char *function                  = "libregf_file_open_wide";
-	size_t filename_length                 = 0;
+	libbfio_handle_t *file_io_handle             = NULL;
+	libbfio_handle_t *transaction_log1_file_io_handle = NULL;
+	libbfio_handle_t *transaction_log2_file_io_handle = NULL;
+	char *transaction_log1_filename              = NULL;
+	char *transaction_log2_filename              = NULL;
+	libregf_internal_file_t *internal_file       = NULL;
+	static char *function                        = "libregf_file_open";
+	size_t filename_length                       = 0;
+	int file_io_handle_exists                    = 0;
 
 	if( file == NULL )
 	{
@@ -488,10 +569,61 @@ int libregf_file_open_wide(
 
 		return( -1 );
 	}
-	internal_file = (libregf_internal_file_t *) file;
+	filename_length = narrow_string_length(
+	                   filename );
 
-	if( libbfio_file_initialize(
+	if( filename_length > ( (size_t) SSIZE_MAX - 6 ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_VALUE_EXCEEDS_MAXIMUM,
+		 "%s: invalid filename length value exceeds maximum.",
+		 function );
+
+		return( -1 );
+	}
+	transaction_log1_filename = (char *) narrow_string_allocate(
+	                                      filename_length + 6 );
+
+	transaction_log2_filename = (char *) narrow_string_allocate(
+	                                      filename_length + 6 );
+
+	if( ( transaction_log1_filename == NULL )
+	 || ( transaction_log2_filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_MEMORY,
+		 LIBCERROR_MEMORY_ERROR_INSUFFICIENT,
+		 "%s: unable to create transaction log filenames.",
+		 function );
+
+		goto on_error;
+	}
+	narrow_string_copy(
+	 transaction_log1_filename,
+	 filename,
+	 filename_length );
+
+	narrow_string_copy(
+	 &( transaction_log1_filename[ filename_length ] ),
+	 ".LOG1",
+	 6 );
+
+	narrow_string_copy(
+	 transaction_log2_filename,
+	 filename,
+	 filename_length );
+
+	narrow_string_copy(
+	 &( transaction_log2_filename[ filename_length ] ),
+	 ".LOG2",
+	 6 );
+
+	if( libregf_file_initialize_file_io_handle(
 	     &file_io_handle,
+	     filename,
 	     error ) != 1 )
 	{
 		libcerror_error_set(
@@ -503,9 +635,353 @@ int libregf_file_open_wide(
 
 		goto on_error;
 	}
+	if( libregf_file_initialize_file_io_handle(
+	     &transaction_log1_file_io_handle,
+	     transaction_log1_filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to create transaction log 1 file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	file_io_handle_exists = libbfio_handle_exists(
+	                         transaction_log1_file_io_handle,
+	                         error );
+
+	if( file_io_handle_exists == -1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to determine if transaction log 1 exists.",
+		 function );
+
+		goto on_error;
+	}
+	else if( file_io_handle_exists == 0 )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( libregf_file_initialize_file_io_handle(
+	     &transaction_log2_file_io_handle,
+	     transaction_log2_filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to create transaction log 2 file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	file_io_handle_exists = libbfio_handle_exists(
+	                         transaction_log2_file_io_handle,
+	                         error );
+
+	if( file_io_handle_exists == -1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to determine if transaction log 2 exists.",
+		 function );
+
+		goto on_error;
+	}
+	else if( file_io_handle_exists == 0 )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
+		 NULL );
+	}
+	if( libregf_file_open_with_transaction_log_file_io_handles(
+	     file,
+	     file_io_handle,
+	     transaction_log1_file_io_handle,
+	     transaction_log2_file_io_handle,
+	     access_flags,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to open file: %s.",
+		 function,
+		 filename );
+
+		goto on_error;
+	}
+	internal_file = (libregf_internal_file_t *) file;
+
+	if( internal_file->is_recovered != 0 )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	libbfio_handle_free(
+	 &transaction_log1_file_io_handle,
+	 NULL );
+	libbfio_handle_free(
+	 &transaction_log2_file_io_handle,
+	 NULL );
+	memory_free(
+	 transaction_log1_filename );
+	memory_free(
+	 transaction_log2_filename );
+
+	return( 1 );
+
+on_error:
+	if( transaction_log1_filename != NULL )
+	{
+		memory_free(
+		 transaction_log1_filename );
+	}
+	if( transaction_log2_filename != NULL )
+	{
+		memory_free(
+		 transaction_log2_filename );
+	}
+	if( transaction_log1_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( transaction_log2_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
+		 NULL );
+	}
+	if( file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	return( -1 );
+}
+
+/* Opens a file and applies transaction logs
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_open_with_transaction_logs(
+     libregf_file_t *file,
+     const char *filename,
+     const char *transaction_log1_filename,
+     const char *transaction_log2_filename,
+     int access_flags,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *file_io_handle             = NULL;
+	libbfio_handle_t *transaction_log1_file_io_handle = NULL;
+	libbfio_handle_t *transaction_log2_file_io_handle = NULL;
+	libregf_internal_file_t *internal_file       = NULL;
+	static char *function                        = "libregf_file_open_with_transaction_logs";
+	int file_io_handle_exists                    = 0;
+
+	if( ( file == NULL )
+	 || ( filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( libregf_file_initialize_file_io_handle(
+	     &file_io_handle,
+	     filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	if( transaction_log1_filename != NULL )
+	{
+		if( libregf_file_initialize_file_io_handle(
+		     &transaction_log1_file_io_handle,
+		     transaction_log1_filename,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to create transaction log 1 file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		file_io_handle_exists = libbfio_handle_exists(
+		                         transaction_log1_file_io_handle,
+		                         error );
+
+		if( file_io_handle_exists != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to open transaction log 1.",
+			 function );
+
+			goto on_error;
+		}
+	}
+	if( transaction_log2_filename != NULL )
+	{
+		if( libregf_file_initialize_file_io_handle(
+		     &transaction_log2_file_io_handle,
+		     transaction_log2_filename,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to create transaction log 2 file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		file_io_handle_exists = libbfio_handle_exists(
+		                         transaction_log2_file_io_handle,
+		                         error );
+
+		if( file_io_handle_exists != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to open transaction log 2.",
+			 function );
+
+			goto on_error;
+		}
+	}
+	if( libregf_file_open_with_transaction_log_file_io_handles(
+	     file,
+	     file_io_handle,
+	     transaction_log1_file_io_handle,
+	     transaction_log2_file_io_handle,
+	     access_flags,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to open file.",
+		 function );
+
+		goto on_error;
+	}
+	internal_file = (libregf_internal_file_t *) file;
+
+	if( internal_file->is_recovered != 0 )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	libbfio_handle_free(
+	 &transaction_log1_file_io_handle,
+	 NULL );
+	libbfio_handle_free(
+	 &transaction_log2_file_io_handle,
+	 NULL );
+
+	return( 1 );
+
+on_error:
+	if( file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	if( transaction_log1_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( transaction_log2_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
+		 NULL );
+	}
+	return( -1 );
+}
+
+#if defined( HAVE_WIDE_CHARACTER_TYPE )
+
+/* Creates a file IO handle for a wide filename
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_initialize_file_io_handle_wide(
+     libbfio_handle_t **file_io_handle,
+     const wchar_t *filename,
+     libcerror_error_t **error )
+{
+	static char *function  = "libregf_file_initialize_file_io_handle_wide";
+	size_t filename_length = 0;
+
+	if( ( file_io_handle == NULL )
+	 || ( *file_io_handle != NULL )
+	 || ( filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( libbfio_file_initialize(
+	     file_io_handle,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
+		 function );
+
+		return( -1 );
+	}
 #if defined( HAVE_DEBUG_OUTPUT )
 	if( libbfio_handle_set_track_offsets_read(
-	     file_io_handle,
+	     *file_io_handle,
 	     1,
 	     error ) != 1 )
 	{
@@ -523,7 +999,7 @@ int libregf_file_open_wide(
 	                   filename );
 
 	if( libbfio_file_set_name_wide(
-	     file_io_handle,
+	     *file_io_handle,
 	     filename,
 	     filename_length + 1,
 	     error ) != 1 )
@@ -537,9 +1013,221 @@ int libregf_file_open_wide(
 
 		goto on_error;
 	}
-	if( libregf_file_open_file_io_handle(
+	return( 1 );
+
+on_error:
+	libbfio_handle_free(
+	 file_io_handle,
+	 NULL );
+
+	return( -1 );
+}
+
+/* Opens a file
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_open_wide(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     int access_flags,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *file_io_handle             = NULL;
+	libbfio_handle_t *transaction_log1_file_io_handle = NULL;
+	libbfio_handle_t *transaction_log2_file_io_handle = NULL;
+	wchar_t *transaction_log1_filename           = NULL;
+	wchar_t *transaction_log2_filename           = NULL;
+	libregf_internal_file_t *internal_file       = NULL;
+	static char *function                        = "libregf_file_open_wide";
+	size_t filename_length                       = 0;
+	int file_io_handle_exists                    = 0;
+
+	if( file == NULL )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid file.",
+		 function );
+
+		return( -1 );
+	}
+	if( filename == NULL )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid filename.",
+		 function );
+
+		return( -1 );
+	}
+	if( ( ( access_flags & LIBREGF_ACCESS_FLAG_READ ) == 0 )
+	 && ( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) == 0 ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
+		 "%s: unsupported access flags.",
+		 function );
+
+		return( -1 );
+	}
+	if( ( access_flags & LIBREGF_ACCESS_FLAG_WRITE ) != 0 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_UNSUPPORTED_VALUE,
+		 "%s: write access currently not supported.",
+		 function );
+
+		return( -1 );
+	}
+	filename_length = wide_string_length(
+	                   filename );
+
+	if( filename_length > ( (size_t) SSIZE_MAX - 6 ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_VALUE_EXCEEDS_MAXIMUM,
+		 "%s: invalid filename length value exceeds maximum.",
+		 function );
+
+		return( -1 );
+	}
+	transaction_log1_filename = (wchar_t *) wide_string_allocate(
+	                                         filename_length + 6 );
+
+	transaction_log2_filename = (wchar_t *) wide_string_allocate(
+	                                         filename_length + 6 );
+
+	if( ( transaction_log1_filename == NULL )
+	 || ( transaction_log2_filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_MEMORY,
+		 LIBCERROR_MEMORY_ERROR_INSUFFICIENT,
+		 "%s: unable to create transaction log filenames.",
+		 function );
+
+		goto on_error;
+	}
+	wide_string_copy(
+	 transaction_log1_filename,
+	 filename,
+	 filename_length );
+
+	wide_string_copy(
+	 &( transaction_log1_filename[ filename_length ] ),
+	 L".LOG1",
+	 6 );
+
+	wide_string_copy(
+	 transaction_log2_filename,
+	 filename,
+	 filename_length );
+
+	wide_string_copy(
+	 &( transaction_log2_filename[ filename_length ] ),
+	 L".LOG2",
+	 6 );
+
+	if( libregf_file_initialize_file_io_handle_wide(
+	     &file_io_handle,
+	     filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	if( libregf_file_initialize_file_io_handle_wide(
+	     &transaction_log1_file_io_handle,
+	     transaction_log1_filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to create transaction log 1 file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	file_io_handle_exists = libbfio_handle_exists(
+	                         transaction_log1_file_io_handle,
+	                         error );
+
+	if( file_io_handle_exists == -1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to determine if transaction log 1 exists.",
+		 function );
+
+		goto on_error;
+	}
+	else if( file_io_handle_exists == 0 )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( libregf_file_initialize_file_io_handle_wide(
+	     &transaction_log2_file_io_handle,
+	     transaction_log2_filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to create transaction log 2 file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	file_io_handle_exists = libbfio_handle_exists(
+	                         transaction_log2_file_io_handle,
+	                         error );
+
+	if( file_io_handle_exists == -1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to determine if transaction log 2 exists.",
+		 function );
+
+		goto on_error;
+	}
+	else if( file_io_handle_exists == 0 )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
+		 NULL );
+	}
+	if( libregf_file_open_with_transaction_log_file_io_handles(
 	     file,
 	     file_io_handle,
+	     transaction_log1_file_io_handle,
+	     transaction_log2_file_io_handle,
 	     access_flags,
 	     error ) != 1 )
 	{
@@ -553,40 +1241,199 @@ int libregf_file_open_wide(
 
 		goto on_error;
 	}
-#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
-	if( libcthreads_read_write_lock_grab_for_write(
-	     internal_file->read_write_lock,
+	internal_file = (libregf_internal_file_t *) file;
+
+	if( internal_file->is_recovered != 0 )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	libbfio_handle_free(
+	 &transaction_log1_file_io_handle,
+	 NULL );
+	libbfio_handle_free(
+	 &transaction_log2_file_io_handle,
+	 NULL );
+	memory_free(
+	 transaction_log1_filename );
+	memory_free(
+	 transaction_log2_filename );
+
+	return( 1 );
+
+on_error:
+	if( transaction_log1_filename != NULL )
+	{
+		memory_free(
+		 transaction_log1_filename );
+	}
+	if( transaction_log2_filename != NULL )
+	{
+		memory_free(
+		 transaction_log2_filename );
+	}
+	if( transaction_log1_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( transaction_log2_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
+		 NULL );
+	}
+	if( file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	return( -1 );
+}
+
+/* Opens a file and applies transaction logs
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_open_wide_with_transaction_logs(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     const wchar_t *transaction_log1_filename,
+     const wchar_t *transaction_log2_filename,
+     int access_flags,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *file_io_handle             = NULL;
+	libbfio_handle_t *transaction_log1_file_io_handle = NULL;
+	libbfio_handle_t *transaction_log2_file_io_handle = NULL;
+	libregf_internal_file_t *internal_file       = NULL;
+	static char *function                        = "libregf_file_open_wide_with_transaction_logs";
+	int file_io_handle_exists                    = 0;
+
+	if( ( file == NULL )
+	 || ( filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( libregf_file_initialize_file_io_handle_wide(
+	     &file_io_handle,
+	     filename,
 	     error ) != 1 )
 	{
 		libcerror_error_set(
 		 error,
 		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to grab read/write lock for writing.",
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
 		 function );
 
 		goto on_error;
 	}
-#endif
-	internal_file->file_io_handle_created_in_library = 1;
+	if( transaction_log1_filename != NULL )
+	{
+		if( libregf_file_initialize_file_io_handle_wide(
+		     &transaction_log1_file_io_handle,
+		     transaction_log1_filename,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to create transaction log 1 file IO handle.",
+			 function );
 
-#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
-	if( libcthreads_read_write_lock_release_for_write(
-	     internal_file->read_write_lock,
+			goto on_error;
+		}
+		file_io_handle_exists = libbfio_handle_exists(
+		                         transaction_log1_file_io_handle,
+		                         error );
+
+		if( file_io_handle_exists != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to open transaction log 1.",
+			 function );
+
+			goto on_error;
+		}
+	}
+	if( transaction_log2_filename != NULL )
+	{
+		if( libregf_file_initialize_file_io_handle_wide(
+		     &transaction_log2_file_io_handle,
+		     transaction_log2_filename,
+		     error ) != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to create transaction log 2 file IO handle.",
+			 function );
+
+			goto on_error;
+		}
+		file_io_handle_exists = libbfio_handle_exists(
+		                         transaction_log2_file_io_handle,
+		                         error );
+
+		if( file_io_handle_exists != 1 )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_OPEN_FAILED,
+			 "%s: unable to open transaction log 2.",
+			 function );
+
+			goto on_error;
+		}
+	}
+	if( libregf_file_open_with_transaction_log_file_io_handles(
+	     file,
+	     file_io_handle,
+	     transaction_log1_file_io_handle,
+	     transaction_log2_file_io_handle,
+	     access_flags,
 	     error ) != 1 )
 	{
 		libcerror_error_set(
 		 error,
-		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
-		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
-		 "%s: unable to release read/write lock for writing.",
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to open file.",
 		 function );
-
-		internal_file->file_io_handle_created_in_library = 0;
 
 		goto on_error;
 	}
-#endif
+	internal_file = (libregf_internal_file_t *) file;
+
+	if( internal_file->is_recovered != 0 )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	libbfio_handle_free(
+	 &transaction_log1_file_io_handle,
+	 NULL );
+	libbfio_handle_free(
+	 &transaction_log2_file_io_handle,
+	 NULL );
+
 	return( 1 );
 
 on_error:
@@ -594,6 +1441,18 @@ on_error:
 	{
 		libbfio_handle_free(
 		 &file_io_handle,
+		 NULL );
+	}
+	if( transaction_log1_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log1_file_io_handle,
+		 NULL );
+	}
+	if( transaction_log2_file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &transaction_log2_file_io_handle,
 		 NULL );
 	}
 	return( -1 );
@@ -878,6 +1737,17 @@ int libregf_file_close(
 	}
 	internal_file->file_io_handle = NULL;
 
+	if( internal_file->recovered_data != NULL )
+	{
+		memory_free(
+		 internal_file->recovered_data );
+
+		internal_file->recovered_data      = NULL;
+		internal_file->recovered_data_size = 0;
+	}
+	internal_file->is_recovered                   = 0;
+	internal_file->last_recovered_sequence_number = 0;
+
 	if( libregf_io_handle_clear(
 	     internal_file->io_handle,
 	     error ) != 1 )
@@ -956,6 +1826,404 @@ int libregf_file_close(
 #endif
 	return( result );
 }
+
+/* Determines if the file was recovered using transaction logs
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_is_recovered(
+     libregf_file_t *file,
+     int *is_recovered,
+     libcerror_error_t **error )
+{
+	libregf_internal_file_t *internal_file = NULL;
+	static char *function                  = "libregf_file_is_recovered";
+
+	if( file == NULL )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid file.",
+		 function );
+
+		return( -1 );
+	}
+	if( is_recovered == NULL )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid is recovered value.",
+		 function );
+
+		return( -1 );
+	}
+	internal_file = (libregf_internal_file_t *) file;
+
+	*is_recovered = ( internal_file->is_recovered != 0 );
+
+	return( 1 );
+}
+
+/* Writes the current file data to a file IO handle
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_write_file_io_handle(
+     libregf_file_t *file,
+     libbfio_handle_t *file_io_handle,
+     libcerror_error_t **error )
+{
+	uint8_t buffer[ 65536 ];
+	libregf_internal_file_t *internal_file = NULL;
+	static char *function                  = "libregf_file_write_file_io_handle";
+	size64_t data_size                     = 0;
+	off64_t data_offset                    = 0;
+	size_t read_size                       = 0;
+	ssize_t read_count                     = 0;
+	ssize_t write_count                    = 0;
+	int result                             = 1;
+
+	if( ( file == NULL )
+	 || ( file_io_handle == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	internal_file = (libregf_internal_file_t *) file;
+
+	if( internal_file->file_io_handle == NULL )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_VALUE_MISSING,
+		 "%s: invalid file - missing file IO handle.",
+		 function );
+
+		return( -1 );
+	}
+#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
+	if( libcthreads_read_write_lock_grab_for_write(
+	     internal_file->read_write_lock,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
+		 "%s: unable to grab read/write lock for writing.",
+		 function );
+
+		return( -1 );
+	}
+#endif
+	if( libbfio_handle_get_size(
+	     internal_file->file_io_handle,
+	     &data_size,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_GET_FAILED,
+		 "%s: unable to retrieve file size.",
+		 function );
+
+		result = -1;
+
+		goto on_cleanup;
+	}
+	while( data_offset < (off64_t) data_size )
+	{
+		read_size = sizeof( buffer );
+
+		if( ( (size64_t) data_offset + read_size ) > data_size )
+		{
+			read_size = (size_t) ( data_size - data_offset );
+		}
+		read_count = libbfio_handle_read_buffer_at_offset(
+		              internal_file->file_io_handle,
+		              buffer,
+		              read_size,
+		              data_offset,
+		              error );
+
+		if( read_count != (ssize_t) read_size )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_READ_FAILED,
+			 "%s: unable to read data at offset: %" PRIi64 ".",
+			 function,
+			 data_offset );
+
+			result = -1;
+
+			goto on_cleanup;
+		}
+		write_count = libbfio_handle_write_buffer_at_offset(
+		               file_io_handle,
+		               buffer,
+		               read_size,
+		               data_offset,
+		               error );
+
+		if( write_count != (ssize_t) read_size )
+		{
+			libcerror_error_set(
+			 error,
+			 LIBCERROR_ERROR_DOMAIN_IO,
+			 LIBCERROR_IO_ERROR_WRITE_FAILED,
+			 "%s: unable to write data at offset: %" PRIi64 ".",
+			 function,
+			 data_offset );
+
+			result = -1;
+
+			goto on_cleanup;
+		}
+		data_offset += (off64_t) read_size;
+	}
+
+on_cleanup:
+#if defined( HAVE_LIBREGF_MULTI_THREAD_SUPPORT )
+	if( libcthreads_read_write_lock_release_for_write(
+	     internal_file->read_write_lock,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_SET_FAILED,
+		 "%s: unable to release read/write lock for writing.",
+		 function );
+
+		result = -1;
+	}
+#endif
+	return( result );
+}
+
+/* Writes the recovered or original file data to a file
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_write(
+     libregf_file_t *file,
+     const char *filename,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *file_io_handle = NULL;
+	static char *function            = "libregf_file_write";
+	int result                       = 0;
+
+	if( ( file == NULL )
+	 || ( filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( libregf_file_initialize_file_io_handle(
+	     &file_io_handle,
+	     filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	if( libbfio_handle_open(
+	     file_io_handle,
+	     LIBBFIO_OPEN_WRITE_TRUNCATE,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to open file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	result = libregf_file_write_file_io_handle(
+	          file,
+	          file_io_handle,
+	          error );
+
+	if( result != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_WRITE_FAILED,
+		 "%s: unable to write file data.",
+		 function );
+	}
+	if( libbfio_handle_close(
+	     file_io_handle,
+	     error ) != 0 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_CLOSE_FAILED,
+		 "%s: unable to close file IO handle.",
+		 function );
+
+		result = -1;
+	}
+	if( libbfio_handle_free(
+	     &file_io_handle,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_FINALIZE_FAILED,
+		 "%s: unable to free file IO handle.",
+		 function );
+
+		result = -1;
+	}
+	return( result );
+
+on_error:
+	if( file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	return( -1 );
+}
+
+#if defined( HAVE_WIDE_CHARACTER_TYPE )
+
+/* Writes the recovered or original file data to a file
+ * Returns 1 if successful or -1 on error
+ */
+int libregf_file_write_wide(
+     libregf_file_t *file,
+     const wchar_t *filename,
+     libcerror_error_t **error )
+{
+	libbfio_handle_t *file_io_handle = NULL;
+	static char *function            = "libregf_file_write_wide";
+	int result                       = 0;
+
+	if( ( file == NULL )
+	 || ( filename == NULL ) )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_ARGUMENTS,
+		 LIBCERROR_ARGUMENT_ERROR_INVALID_VALUE,
+		 "%s: invalid argument.",
+		 function );
+
+		return( -1 );
+	}
+	if( libregf_file_initialize_file_io_handle_wide(
+	     &file_io_handle,
+	     filename,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_INITIALIZE_FAILED,
+		 "%s: unable to create file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	if( libbfio_handle_open(
+	     file_io_handle,
+	     LIBBFIO_OPEN_WRITE_TRUNCATE,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_OPEN_FAILED,
+		 "%s: unable to open file IO handle.",
+		 function );
+
+		goto on_error;
+	}
+	result = libregf_file_write_file_io_handle(
+	          file,
+	          file_io_handle,
+	          error );
+
+	if( result != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_WRITE_FAILED,
+		 "%s: unable to write file data.",
+		 function );
+	}
+	if( libbfio_handle_close(
+	     file_io_handle,
+	     error ) != 0 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_IO,
+		 LIBCERROR_IO_ERROR_CLOSE_FAILED,
+		 "%s: unable to close file IO handle.",
+		 function );
+
+		result = -1;
+	}
+	if( libbfio_handle_free(
+	     &file_io_handle,
+	     error ) != 1 )
+	{
+		libcerror_error_set(
+		 error,
+		 LIBCERROR_ERROR_DOMAIN_RUNTIME,
+		 LIBCERROR_RUNTIME_ERROR_FINALIZE_FAILED,
+		 "%s: unable to free file IO handle.",
+		 function );
+
+		result = -1;
+	}
+	return( result );
+
+on_error:
+	if( file_io_handle != NULL )
+	{
+		libbfio_handle_free(
+		 &file_io_handle,
+		 NULL );
+	}
+	return( -1 );
+}
+
+#endif /* defined( HAVE_WIDE_CHARACTER_TYPE ) */
 
 /* Opens a file for reading
  * Returns 1 if successful or -1 on error

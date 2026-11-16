@@ -1,0 +1,3 @@
+* Added transaction log recovery for DIRT and HvLE .LOG1 and .LOG2 files
+* Added libregf_file_open_with_transaction_logs and libregf_file_write
+* Added regfrecover

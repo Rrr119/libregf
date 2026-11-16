@@ -76,6 +76,12 @@ Library
 Error tollerance:
 * deal with cyclic keys, add max depth or track key offsets
 
+20261116
+* Added DIRT and HvLE transaction log parsing and recovery
+* Added sequence number and checksum validation for transaction logs
+* Added libregf_file_open_with_transaction_logs and libregf_file_write
+* Added regfrecover
+
 20140929
 * see `git log' for more recent change log
 * removed README.macosx
